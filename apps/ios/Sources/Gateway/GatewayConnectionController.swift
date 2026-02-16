@@ -162,12 +162,13 @@ final class GatewayConnectionController {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let token = GatewaySettingsStore.loadGatewayToken(instanceId: instanceId)
         let password = GatewaySettingsStore.loadGatewayPassword(instanceId: instanceId)
-        let resolvedUseTLS = useTLS
+        let resolvedUseTLS = useTLS || self.shouldForceTLS(host: host)
         guard let resolvedPort = self.resolveManualPort(host: host, port: port, useTLS: resolvedUseTLS)
         else { return }
         let stableID = self.manualStableID(host: host, port: resolvedPort)
         let stored = GatewayTLSStore.loadFingerprint(stableID: stableID)
-        if resolvedUseTLS, stored == nil {
+        // Skip fingerprint pinning for .ts.net (Tailscale Funnel) hosts — they use real CA certs.
+        if resolvedUseTLS, stored == nil, !self.shouldForceTLS(host: host) {
             guard let url = self.buildGatewayURL(host: host, port: resolvedPort, useTLS: true) else { return }
             guard let fp = await self.probeTLSFingerprint(url: url) else { return }
             self.pendingTrustConnect = (url: url, stableID: stableID, isManual: true)
@@ -182,18 +183,19 @@ final class GatewayConnectionController {
             return
         }
 
-        let tlsParams = stored.map { fp in
-            GatewayTLSParams(required: true, expectedFingerprint: fp, allowTOFU: false, storeKey: stableID)
-        }
+        let tlsParams = self.resolveManualTLSParams(
+            stableID: stableID,
+            tlsEnabled: resolvedUseTLS,
+            allowTOFUReset: self.shouldForceTLS(host: host))
         guard let url = self.buildGatewayURL(
             host: host,
             port: resolvedPort,
-            useTLS: tlsParams?.required == true)
+            useTLS: resolvedUseTLS)
         else { return }
         GatewaySettingsStore.saveLastGatewayConnectionManual(
             host: host,
             port: resolvedPort,
-            useTLS: resolvedUseTLS && tlsParams != nil,
+            useTLS: resolvedUseTLS,
             stableID: stableID)
         self.didAutoConnect = true
         self.startAutoConnect(
@@ -662,8 +664,8 @@ final class GatewayConnectionController {
         let resolvedClientId = self.resolvedClientId(defaults: defaults, stableID: stableID)
 
         return GatewayConnectOptions(
-            role: "node",
-            scopes: [],
+            role: "operator",
+            scopes: ["operator.read", "operator.write", "operator.approvals"],
             caps: self.currentCaps(),
             commands: self.currentCommands(),
             permissions: self.currentPermissions(),

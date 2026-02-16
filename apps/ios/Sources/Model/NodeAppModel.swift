@@ -1734,7 +1734,8 @@ private extension NodeAppModel {
                             }
                             await self.showA2UIOnConnectIfNeeded()
                             await self.onNodeGatewayConnected()
-                            await MainActor.run { SignificantLocationMonitor.startIfNeeded(locationService: self.locationService, locationMode: self.locationMode(), gateway: self.nodeGateway) }
+                            // TODO: SignificantLocationMonitor not yet implemented
+                            // await MainActor.run { SignificantLocationMonitor.startIfNeeded(locationService: self.locationService, locationMode: self.locationMode(), gateway: self.nodeGateway) }
                         },
                         onDisconnected: { [weak self] reason in
                             guard let self else { return }
